@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -13,18 +14,6 @@ const createToken = (user) => jwt.sign(
 
 const publicUser = (user) => ({ id: user._id, name: user.name, email: user.email });
 
-const requireAdmin = (req, res, next) => {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    if (payload.role !== 'admin') return res.status(403).json({ message: 'Admin access required.' });
-    req.auth = payload;
-    next();
-  } catch {
-    res.status(401).json({ message: 'Admin authentication required.' });
-  }
-};
-
 router.post('/admin-login', async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -35,6 +24,10 @@ router.post('/admin-login', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+router.get('/me', requireAdmin, (req, res) => {
+  res.json({ user: { id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role } });
 });
 
 router.post('/admin-password', requireAdmin, async (req, res, next) => {

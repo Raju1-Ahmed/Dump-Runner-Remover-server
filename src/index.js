@@ -4,10 +4,18 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import 'dotenv/config';
 import authRoutes from './routes/auth.js';
+import bookingRoutes from './routes/bookings.js';
+import userRoutes from './routes/users.js';
+import contactMessageRoutes from './routes/contact-messages.js';
 import User from './models/User.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
+const allowedOrigins = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  ...(process.env.CLIENT_ORIGIN || '').split(',').map((origin) => origin.trim()).filter(Boolean),
+]);
 
 const ensureAdminUser = async () => {
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
@@ -20,9 +28,15 @@ const ensureAdminUser = async () => {
     { upsert: true, new: true, setDefaultsOnInsert: true, rawResult: true }
   );
   if (result.lastErrorObject?.upserted) console.log('Admin account created in MongoDB.');
+  await User.updateMany({ role: { $exists: false } }, { $set: { role: 'customer' } });
 };
 
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://127.0.0.1:5173' }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    return callback(new Error('Origin is not allowed by CORS.'));
+  },
+}));
 app.use(express.json());
 
 app.get('/api/health', (_req, res) => res.json({
@@ -31,10 +45,17 @@ app.get('/api/health', (_req, res) => res.json({
   database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
 }));
 app.use('/api/auth', authRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/contact-messages', contactMessageRoutes);
+app.use((_req, res) => res.status(404).json({ message: 'API endpoint not found.' }));
 
 app.use((error, _req, res, _next) => {
   console.error(error);
-  res.status(500).json({ message: 'Something went wrong. Please try again.' });
+  if (error.code === 11000) return res.status(409).json({ message: 'This record already exists.' });
+  if (error.name === 'ValidationError') return res.status(400).json({ message: 'Please check the submitted details.' });
+  if (error.type === 'entity.parse.failed') return res.status(400).json({ message: 'Invalid JSON request.' });
+  res.status(error.statusCode || 500).json({ message: error.message || 'Something went wrong. Please try again.' });
 });
 
 const start = async () => {
