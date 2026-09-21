@@ -14,6 +14,7 @@ const port = process.env.PORT || 5000;
 const allowedOrigins = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
+  'https://papaya-pixie-50b854.netlify.app',
   ...(process.env.CLIENT_ORIGIN || '').split(',').map((origin) => origin.trim()).filter(Boolean),
 ]);
 
