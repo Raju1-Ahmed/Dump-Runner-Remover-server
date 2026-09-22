@@ -8,6 +8,7 @@ import bookingRoutes from './routes/bookings.js';
 import userRoutes from './routes/users.js';
 import contactMessageRoutes from './routes/contact-messages.js';
 import User from './models/User.js';
+import analyticsRoutes from './routes/analytics.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -50,6 +51,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/contact-messages', contactMessageRoutes);
+app.use('/api', analyticsRoutes);
 app.use((_req, res) => res.status(404).json({ message: 'API endpoint not found.' }));
 
 app.use((error, _req, res, _next) => {
