@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import geoip from 'geoip-lite';
 import VisitorSession from '../models/VisitorSession.js';
 import PageView from '../models/PageView.js';
 import { requireAdmin } from '../middleware/auth.js';
@@ -19,6 +20,14 @@ const sourceFrom = (referrer, utmSource) => {
   if (/facebook|instagram|tiktok|linkedin|twitter|x.com/i.test(referrer)) return 'Social';
   return 'Referral';
 };
+const countryFromRequest = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  const ip = (forwarded ? forwarded.split(',')[0].trim() : req.socket.remoteAddress || '').replace('::ffff:', '');
+  if (!ip || ip === '127.0.0.1' || ip === '::1') return 'Unknown';
+  const code = geoip.lookup(ip)?.country;
+  if (!code) return 'Unknown';
+  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) || code; } catch { return code; }
+};
 const parseUserAgent = (ua = '') => ({
   deviceType: /tablet|ipad/i.test(ua) ? 'Tablet' : /mobile|android|iphone/i.test(ua) ? 'Mobile' : 'Desktop',
   operatingSystem: /windows/i.test(ua) ? 'Windows' : /mac os|macintosh/i.test(ua) ? 'macOS' : /android/i.test(ua) ? 'Android' : /iphone|ipad|ios/i.test(ua) ? 'iOS' : /linux/i.test(ua) ? 'Linux' : 'Other',
@@ -31,14 +40,15 @@ router.post('/track', async (req, res) => {
     const { visitorId, sessionId, pagePath = '/', pageTitle = 'DUMP RUNNERZ', referrer = 'Direct', language = 'Unknown', utmSource, utmMedium, utmCampaign } = req.body || {};
     if (!visitorId || !sessionId) return res.status(400).json({ message: 'Analytics identifiers are required.' });
     const parsed = parseUserAgent(req.get('user-agent'));
+    const country = countryFromRequest(req);
     const trafficSource = sourceFrom(referrer, utmSource);
     const existingVisitor = await VisitorSession.exists({ visitorId });
     await VisitorSession.findOneAndUpdate({ sessionId }, {
-      $set: { lastSeenAt: new Date(), exitPage: pagePath, ...parsed, language, referrer, trafficSource, utmSource, utmMedium, utmCampaign, isReturningVisitor: Boolean(existingVisitor) },
+      $set: { lastSeenAt: new Date(), exitPage: pagePath, country, ...parsed, language, referrer, trafficSource, utmSource, utmMedium, utmCampaign, isReturningVisitor: Boolean(existingVisitor) },
       $setOnInsert: { visitorId, sessionId, firstSeenAt: new Date(), landingPage: pagePath },
       $inc: { pageViews: 1 },
     }, { upsert: true, setDefaultsOnInsert: true });
-    await PageView.create({ sessionId, visitorId, pagePath, pageTitle, referrer, trafficSource, ...parsed, timestamp: new Date() });
+    await PageView.create({ sessionId, visitorId, pagePath, pageTitle, referrer, trafficSource, country, ...parsed, timestamp: new Date() });
     res.status(202).json({ ok: true });
   } catch (error) { console.error('Analytics tracking failed:', error.message); res.status(202).json({ ok: false }); }
 });
